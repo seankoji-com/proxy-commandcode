@@ -1,9 +1,0 @@
-Update README model list from official CommandCode registry
-
-- Add free models: laguna-s-2.1-free, ling-3.0-flash-free
-- Update all slugs to match official cmd --list-models output
-- Add new models: Kimi-K3, GLM-5.2-Fast, Qwen3.6-Plus, Step-3.7-Flash, inkling
-- Fix provider prefixes: zai-org, MiniMaxAI, xiaomi, nvidia, thinkingmachines
-- Update tencent/Hy3 to tencent/hy3-paid
-
-Co-authored-by: CommandCodeBot <noreply@commandcode.ai>
