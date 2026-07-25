@@ -128,28 +128,35 @@ Open-weight models accessible on any plan (including Go). Use the exact slug as 
 
 | Model | Notes |
 |---|---|
-| `tencent/Hy3` | Free until 2026-07-21 |
+| `poolside/laguna-s-2.1-free` | Free while capacity lasts |
+| `inclusionai/ling-3.0-flash-free` | Free until 2026-08-02 |
 | `deepseek/deepseek-v4-pro` | |
 | `deepseek/deepseek-v4-flash` | |
-| `moonshotai/Kimi-K2.5` | |
+| `moonshotai/Kimi-K3` | |
+| `moonshotai/Kimi-K2.7-Code` | |
+| `moonshotai/Kimi-K2.7-Code-Highspeed` | |
 | `moonshotai/Kimi-K2.6` | |
-| `moonshotai/Kimi-K2.7` | |
+| `moonshotai/Kimi-K2.5` | |
+| `zai-org/GLM-5.2` | |
+| `zai-org/GLM-5.2-Fast` | |
+| `zai-org/GLM-5.1` | |
+| `zai-org/GLM-5` | |
+| `MiniMaxAI/MiniMax-M3` | |
+| `MiniMaxAI/MiniMax-M2.7` | |
+| `MiniMaxAI/MiniMax-M2.5` | |
+| `xiaomi/mimo-v2.5-pro` | |
+| `xiaomi/mimo-v2.5` | |
 | `Qwen/Qwen3.7-Max` | |
 | `Qwen/Qwen3.7-Plus` | |
 | `Qwen/Qwen3.6-Max-Preview` | |
-| `GLM/GLM-5.2` | |
-| `GLM/GLM-5.1` | |
-| `GLM/GLM-5` | |
-| `MiniMax/MiniMax-M3` | |
-| `MiniMax/MiniMax-M2.7` | |
-| `MiniMax/MiniMax-M2.5` | |
-| `MiMo/MiMo-V2.5-Pro` | |
-| `MiMo/MiMo-V2.5` | |
-| `stepfun/Step-3.7` | |
+| `Qwen/Qwen3.6-Plus` | |
+| `stepfun/Step-3.7-Flash` | |
 | `stepfun/Step-3.5-Flash` | |
-| `nvidia/Nemotron-3-Ultra` |
+| `tencent/hy3-paid` | |
+| `nvidia/nemotron-3-ultra-550b-a55b` | |
+| `thinkingmachines/inkling` | |
 
-> Slugs are case-sensitive (e.g. `tencent/Hy3`, not `tencent/HY3`). Model list may change — check `GET /provider/v1/models` for the current roster.
+> [See all models](https://commandcode.ai/docs/reference/cli/models) → `cmd --list-models` for the current roster.
 
 ## Logs
 
@@ -189,4 +196,3 @@ This project is for educational and research purposes only. It uses CommandCode'
 ## License
 
 MIT
-
