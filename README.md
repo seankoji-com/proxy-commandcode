@@ -124,12 +124,25 @@ Any editor with custom OpenAI endpoint support works the same way: point base UR
 
 ## Available models
 
-Open-weight models accessible on any plan (including Go). Use the exact slug as the model field.
+Model availability depends on your CommandCode plan:
+
+| Plan | Price/mo | Access |
+|---|---|---|
+| Go | $1 | Open-source + free + some premium (Luna, Grok, Muse Spark Contributor) |
+| GOAT | $10 | Go + Muse Spark 1.2 |
+| Pro | $20 | GOAT + full premium (GPT, Claude, Gemini) |
+
+**Free models** (cost no credits):
 
 | Model | Notes |
 |---|---|
 | `poolside/laguna-s-2.1-free` | Free while capacity lasts |
 | `inclusionai/ling-3.0-flash-free` | Free until 2026-08-02 |
+
+**Open-source — Go plan and above:**
+
+| Model | Notes |
+|---|---|
 | `deepseek/deepseek-v4-pro` | |
 | `deepseek/deepseek-v4-flash` | |
 | `moonshotai/Kimi-K3` | |
@@ -146,8 +159,10 @@ Open-weight models accessible on any plan (including Go). Use the exact slug as 
 | `MiniMaxAI/MiniMax-M2.5` | |
 | `xiaomi/mimo-v2.5-pro` | |
 | `xiaomi/mimo-v2.5` | |
+| `Qwen/Qwen3.8-Max` | |
 | `Qwen/Qwen3.7-Max` | |
 | `Qwen/Qwen3.7-Plus` | |
+| `Qwen/Qwen3.7-Flash` | |
 | `Qwen/Qwen3.6-Max-Preview` | |
 | `Qwen/Qwen3.6-Plus` | |
 | `stepfun/Step-3.7-Flash` | |
@@ -155,6 +170,33 @@ Open-weight models accessible on any plan (including Go). Use the exact slug as 
 | `tencent/hy3-paid` | |
 | `nvidia/nemotron-3-ultra-550b-a55b` | |
 | `thinkingmachines/inkling` | |
+| `thinkingmachines/inkling-small` | |
+
+**Premium — Go plan and above:**
+
+| Model | Notes |
+|---|---|
+| `gpt-5.6-luna` | 50% off until 2026-08-13 |
+| `xai/grok-4.5` | |
+| `meta/muse-spark-1.2-contributor` | ~95% off |
+
+**GOAT plan and above:**
+
+| Model | Notes |
+|---|---|
+| `meta/muse-spark-1.2` | |
+
+**Premium — Pro plan and above:**
+
+| Model | Notes |
+|---|---|
+| `gpt-5.6-sol` | |
+| `gpt-5.6-terra` | 50% off until 2026-08-13 |
+| `gpt-5.5` | |
+| `claude-opus-5` | |
+| `claude-sonnet-5` | |
+| `google/gemini-3.6-flash` | |
+| `sakana/fugu-ultra` | |
 
 > [See all models](https://commandcode.ai/docs/reference/cli/models) → `cmd --list-models` for the current roster.
 

@@ -1,0 +1,8 @@
+Update README model list with new models and plan tiers
+
+- Add Qwen3.7-Flash, Qwen3.8-Max, Muse Spark 1.2/1.2-contributor, Inkling Small
+- Add premium tier with GPT-5.6 sol/terra/luna, Claude, Gemini, Fugu
+- Mark plan availability: Luna/Grok/Muse Contributor on Go, Muse 1.2 on GOAT, rest on Pro
+- Note active deals: Luna/Terra 50% off until 2026-08-13, Muse Contributor ~95% off
+
+Co-authored-by: CommandCodeBot <noreply@commandcode.ai>
