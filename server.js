@@ -10,7 +10,7 @@ const { execSync } = require('child_process');
 const PORT = process.env.PCMC_PORT || 3456;
 const HOST = 'api.commandcode.ai';
 const PATH = '/alpha/generate';
-const CC_VERSION = process.env.PCMC_VERSION || '0.41.1';
+const CC_VERSION = process.env.PCMC_VERSION || '1.54.0';
 const DEBUG = process.env.PCMC_DEBUG === '1'; // set PCMC_DEBUG=1 to enable
 
 const logFile = fs.createWriteStream(path.join(__dirname, 'proxy.log'), { flags: 'a' });

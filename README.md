@@ -10,8 +10,8 @@ CommandCode has two API surfaces:
 
 | Endpoint | Plan required |
 |---|---|
-| `/provider/v1/chat/completions` | Pro |
-| `/provider/v1/messages` | Pro |
+| `/provider/v1/chat/completions` | Provider plan |
+| `/provider/v1/messages` | Provider plan |
 | `/alpha/generate` | **Any plan** (Go included) |
 
 This proxy speaks the same envelope the official CLI uses, so it works on any plan.
@@ -48,7 +48,7 @@ Zero dependencies. Node.js 18+ only.
 | Variable | Default |
 |---|---|
 | `PCMC_PORT` | `3456` |
-| `PCMC_VERSION` | `0.41.1` |
+| `PCMC_VERSION` | `1.54.0` |
 | `PCMC_DEBUG` | off (set `1` to enable) |
 
 ### Enabling debug mode
@@ -128,38 +128,47 @@ Model availability depends on your CommandCode plan:
 
 | Plan | Price/mo | Access |
 |---|---|---|
-| Go | $1 | Open-source + free + some premium (Luna, Grok, Muse Spark Contributor) |
-| GOAT | $10 | Go + Muse Spark 1.2 |
-| Pro | $20 | GOAT + full premium (GPT, Claude, Gemini) |
+| Go | $1 | Open-source + free + some premium (Luna, Grok 4.5, Muse Spark Contributor) |
+| GOAT | $10 | Go + per-model premium allowances (Sol, Grok 4.6, Muse Spark, Gemini 3.7/3.8) |
+| Pro | $20 | GOAT + full premium (GPT-6, Claude, Gemini) |
 
 **Free models** (cost no credits):
 
 | Model | Notes |
 |---|---|
 | `poolside/laguna-s-2.1-free` | Free while capacity lasts |
-| `inclusionai/ling-3.0-flash-free` | Free until 2026-08-02 |
+| `meituan/LongCat-2.0:free` | 100 req/day · free while it lasts |
+| `inclusionai/ling-3.0-flash-sante:free` | 100 req/day · free while it lasts |
 
 **Open-source — Go plan and above:**
 
 | Model | Notes |
 |---|---|
-| `deepseek/deepseek-v4-pro` | |
-| `deepseek/deepseek-v4-flash` | |
+| `deepseek/deepseek-v4-pro` | Peak/off-peak pricing |
+| `deepseek/deepseek-v4-flash` | Peak/off-peak pricing |
+| `deepseek/deepseek-v4-flash-fast` | |
+| `deepseek/deepseek-v4-flash-vision-exp` | |
+| `deepseek/deepseek-v4.1-flash` | Boosted credits on GOAT/Pro until 2026-09-20 |
 | `moonshotai/Kimi-K3` | |
 | `moonshotai/Kimi-K2.7-Code` | |
 | `moonshotai/Kimi-K2.7-Code-Highspeed` | |
 | `moonshotai/Kimi-K2.6` | |
 | `moonshotai/Kimi-K2.5` | |
+| `zai-org/GLM-5.3` | |
+| `z-ai/glm-5.3-flash` | |
 | `zai-org/GLM-5.2` | |
 | `zai-org/GLM-5.2-Fast` | |
 | `zai-org/GLM-5.1` | |
 | `zai-org/GLM-5` | |
-| `MiniMaxAI/MiniMax-M3` | |
+| `MiniMaxAI/MiniMax-M3` | 50% off |
 | `MiniMaxAI/MiniMax-M2.7` | |
 | `MiniMaxAI/MiniMax-M2.5` | |
-| `xiaomi/mimo-v2.5-pro` | |
-| `xiaomi/mimo-v2.5` | |
+| `xiaomi/mimo-v2.5-pro` | Up to 99% off |
+| `xiaomi/mimo-v2.5` | Up to 98% off |
+| `Qwen/Qwen3.8-Max-0902` | |
 | `Qwen/Qwen3.8-Max` | |
+| `Qwen/Qwen3.8-Flash` | |
+| `Qwen/Qwen3.8-27B` | |
 | `Qwen/Qwen3.7-Max` | |
 | `Qwen/Qwen3.7-Plus` | |
 | `Qwen/Qwen3.7-Flash` | |
@@ -167,6 +176,7 @@ Model availability depends on your CommandCode plan:
 | `Qwen/Qwen3.6-Plus` | |
 | `stepfun/Step-3.7-Flash` | |
 | `stepfun/Step-3.5-Flash` | |
+| `tencent/hy4-preview` | |
 | `tencent/hy3-paid` | |
 | `nvidia/nemotron-3-ultra-550b-a55b` | |
 | `thinkingmachines/inkling` | |
@@ -176,27 +186,48 @@ Model availability depends on your CommandCode plan:
 
 | Model | Notes |
 |---|---|
-| `gpt-5.6-luna` | 50% off until 2026-08-13 |
+| `gpt-5.6-luna` | Not available in China |
 | `xai/grok-4.5` | |
 | `meta/muse-spark-1.2-contributor` | ~95% off |
+| `meta/muse-spark-1.3-contributor` | Up to 95% off |
 
 **GOAT plan and above:**
 
 | Model | Notes |
 |---|---|
+| `gpt-5.6-sol` | |
+| `xai/grok-4.6` | |
 | `meta/muse-spark-1.2` | |
+| `meta/muse-spark-1.3` | |
+| `google/gemini-3.7-flash` | Not available in China |
+| `google/gemini-3.8-flash` | |
 
 **Premium — Pro plan and above:**
 
 | Model | Notes |
 |---|---|
-| `gpt-5.6-sol` | |
-| `gpt-5.6-terra` | 50% off until 2026-08-13 |
+| `gpt-6-astra` | |
+| `gpt-5.6-terra` | |
 | `gpt-5.5` | |
+| `gpt-5.4` | |
+| `gpt-5.4-mini` | |
+| `gpt-5.3-codex` | |
+| `claude-fable-5-1` | |
+| `claude-fable-5` | |
 | `claude-opus-5` | |
+| `claude-opus-4-8` | |
+| `claude-opus-4-7` | |
 | `claude-sonnet-5` | |
+| `claude-sonnet-4-6` | |
+| `claude-haiku-4-5` | |
 | `google/gemini-3.6-flash` | |
+| `google/gemini-3.5-flash` | |
+| `google/gemini-3.5-flash-lite` | |
+| `google/gemini-3.1-flash-lite` | |
+| `meta/muse-spark-1.1` | |
 | `sakana/fugu-ultra` | |
+
+> DeepSeek V4 models: peak rates apply 01:00–04:00 and 06:00–10:00 UTC Mon–Fri; everything else, plus full weekends, is half price.
 
 > [See all models](https://commandcode.ai/docs/reference/cli/models) → `cmd --list-models` for the current roster.
 
