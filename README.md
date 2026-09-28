@@ -4,6 +4,22 @@ A transparent reverse proxy that translates **OpenAI-compatible** requests (`/v1
 
 Use any CommandCode model (including the Go plan) with **ZCode**, **9router**, **Cursor**, **Continue**, **Aider**, and any editor that supports custom OpenAI endpoints.
 
+## Fork changes (seankoji-com)
+
+Forked from [nasrulhadi/proxy-commandcode](https://github.com/nasrulhadi/proxy-commandcode) at `1a95fbb` to run as a LiteLLM sidecar in a container. Differences:
+
+| Area | Change |
+|---|---|
+| Reasoning | Streamed and returned as `reasoning_content`, not mixed into `content` |
+| Errors | An upstream `error` event before any output returns HTTP 502 (so a router can fail over); later events are ignored instead of writing to an ended response; network errors carry the code/addresses instead of an empty message |
+| Usage | `finish-step`/`finish` usage mapped to OpenAI `usage` (sync body; extra stream chunk with empty `choices`) |
+| Finish reason | `length` / `tool_calls` / `content_filter` mapped from the upstream reason |
+| Request shape | Tool-call `input` sent as an object; consecutive tool results merged; `developer` role folded into `system`; image parts use `{image, mediaType}`; `temperature` and `max_completion_tokens` passed through; `x-session-id` and `x-cli-environment` headers sent |
+| CLI version | `x-command-code-version` tracks `command-code@latest` on npm (checked at start and every 6 h, default `1.66.0`); set `PCMC_VERSION` to pin |
+| Runtime | Logs to stdout only (no `proxy.log`, no ANSI without a TTY); Windows `netstat`/`taskkill` port handling removed; graceful `SIGTERM`; `Dockerfile` + `npm test` |
+
+Image: `ghcr.io/seankoji-com/proxy-commandcode:sha-<commit>`, built by `.github/workflows/image.yml` on every branch push. Deploy by digest.
+
 ## Why
 
 CommandCode has two API surfaces:
@@ -48,7 +64,7 @@ Zero dependencies. Node.js 18+ only.
 | Variable | Default |
 |---|---|
 | `PCMC_PORT` | `3456` |
-| `PCMC_VERSION` | `1.54.0` |
+| `PCMC_VERSION` | unset — tracks npm `command-code@latest` (floor `1.66.0`); set to pin |
 | `PCMC_DEBUG` | off (set `1` to enable) |
 
 ### Enabling debug mode

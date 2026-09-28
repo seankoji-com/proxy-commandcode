@@ -1,64 +1,59 @@
 /**
  * Proxy: OpenAI /v1/chat/completions → CommandCode /alpha/generate
+ *
+ * seankoji-com fork — see "Fork changes" in README.md for what differs from
+ * nasrulhadi/proxy-commandcode.
  */
 
 const http = require('http');
 const https = require('https');
-const fs = require('fs');
-const path = require('path');
-const { execSync } = require('child_process');
-const PORT = process.env.PCMC_PORT || 3456;
+const crypto = require('crypto');
+
+const PORT = Number(process.env.PCMC_PORT || 3456);
 const HOST = 'api.commandcode.ai';
 const PATH = '/alpha/generate';
-const CC_VERSION = process.env.PCMC_VERSION || '1.54.0';
-const DEBUG = process.env.PCMC_DEBUG === '1'; // set PCMC_DEBUG=1 to enable
+// Floor used when npm is unreachable. PCMC_VERSION pins it and disables the
+// npm lookup; otherwise the gateway's stale-version rejection is avoided by
+// tracking the published CLI version.
+const DEFAULT_CC_VERSION = '1.66.0';
+const PINNED_VERSION = process.env.PCMC_VERSION || '';
+const VERSION_REFRESH_MS = 6 * 60 * 60 * 1000;
+const DEBUG = process.env.PCMC_DEBUG === '1';
 
-const logFile = fs.createWriteStream(path.join(__dirname, 'proxy.log'), { flags: 'a' });
+let ccVersion = PINNED_VERSION || DEFAULT_CC_VERSION;
+
+const TTY = process.stdout.isTTY;
+const C = TTY
+  ? { reset: '\x1b[0m', cyan: '\x1b[36m', green: '\x1b[32m', yellow: '\x1b[33m', dim: '\x1b[2m', bold: '\x1b[1m' }
+  : { reset: '', cyan: '', green: '', yellow: '', dim: '', bold: '' };
+
 function writeLog(level, msg) {
   const ts = `[${new Date().toISOString()}]`;
-  const colors = { req: C.cyan, upstream: C.green, done: C.bold, error: C.yellow, default: C.reset };
+  const colors = { req: C.cyan, upstream: C.green, done: C.bold, error: C.yellow };
   const c = colors[level] || C.reset;
-  const tag = level ? `${c}${level}${C.reset}` : '';
-  const full = `${C.dim}${ts}${C.reset} ${tag ? `[${tag}] ` : ''}${msg}`;
-  process.stdout.write(full + '\n');
-  logFile.write(`${ts}${tag ? ` [${level}] ` : ' '}${msg}\n`);
+  const tag = level ? `[${c}${level}${C.reset}] ` : '';
+  process.stdout.write(`${C.dim}${ts}${C.reset} ${tag}${msg}\n`);
 }
-function logReq(...a)   { writeLog('req', a.join(' ')); }
-function logUp(...a)    { writeLog('upstream', a.join(' ')); }
-function logDone(...a)  { writeLog('done', a.join(' ')); }
-function logErr(...a)   { writeLog('error', a.join(' ')); }
-function log(...a)      { writeLog('', a.join(' ')); }
+const logReq = (...a) => writeLog('req', a.join(' '));
+const logUp = (...a) => writeLog('upstream', a.join(' '));
+const logDone = (...a) => writeLog('done', a.join(' '));
+const logErr = (...a) => writeLog('error', a.join(' '));
+const log = (...a) => writeLog('', a.join(' '));
 
-const C = { reset: '\x1b[0m', cyan: '\x1b[36m', green: '\x1b[32m', yellow: '\x1b[33m', dim: '\x1b[2m', bold: '\x1b[1m' };
-function banner() {
-  const strip = s => s.replace(/\x1b\[[0-9;]*m/g, '');
-  const pad = (s, w) => s + ' '.repeat(Math.max(0, w - strip(s).length));
-  const L = s => `${C.bold}${s}${C.reset}`;
-
-  const title = `${C.cyan}${C.bold}Proxy CommandCode${C.reset}`;
-  const sub   = `${C.dim}OpenAI → CommandCode /alpha/generate${C.reset}`;
-  const rows = [
-    `${L('Listening')}   http://localhost:${PORT}`,
-    `${L('Endpoint')}    /v1/chat/completions`,
-    `${L('Upstream')}    ${HOST}${PATH}`,
-    `${L('CC Version')}  ${CC_VERSION}`,
-    `${L('Debug')}       ${DEBUG ? `${C.green}ON${C.reset}` : `${C.yellow}OFF${C.reset}`}`,
-  ];
-
-  const all = [title, sub, ...rows];
-  const w = Math.max(...all.map(s => strip(s).length));
-  const box = s => `${C.cyan}│${C.reset}  ${pad(s, w)}  ${C.cyan}│${C.reset}`;
-
-  console.log(`${C.cyan}┌${'─'.repeat(w + 4)}┐${C.reset}`);
-  console.log(box(title));
-  console.log(box(sub));
-  console.log(`${C.cyan}├${'─'.repeat(w + 4)}┤${C.reset}`);
-  for (const r of rows) console.log(box(r));
-  console.log(`${C.cyan}└${'─'.repeat(w + 4)}┘${C.reset}`);
+function refreshVersion() {
+  if (PINNED_VERSION) return;
+  https.get('https://registry.npmjs.org/command-code/latest', { timeout: 10000 }, res => {
+    let body = '';
+    res.on('data', c => { body += c; });
+    res.on('end', () => {
+      try {
+        const v = JSON.parse(body).version;
+        if (/^\d+\.\d+\.\d+$/.test(v) && v !== ccVersion) { log(`CC version ${ccVersion} -> ${v} (npm)`); ccVersion = v; }
+      } catch { logErr(`npm version lookup: unparseable response (keeping ${ccVersion})`); }
+    });
+  }).on('error', e => logErr(`npm version lookup failed: ${netError(e)} (keeping ${ccVersion})`))
+    .on('timeout', function () { this.destroy(new Error('timeout')); });
 }
-
-banner();
-log(`=== proxy started (debug: ${DEBUG ? 'ON' : 'OFF'}) ===`);
 
 const agent = new https.Agent({ keepAlive: true, keepAliveMsecs: 30000, maxSockets: 10, timeout: 300000 });
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type, Authorization' };
@@ -66,11 +61,27 @@ const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers
 function sse(obj) { return `data: ${JSON.stringify(obj)}\n\n`; }
 
 const STATIC_CONFIG = {
-  workingDir: '', date: new Date().toISOString().slice(0, 10), environment: 'windows',
-  structure: [], isGitRepo: false, currentBranch: '', mainBranch: 'main', gitStatus: '', recentCommits: [],
+  workingDir: '', environment: 'linux', structure: [], isGitRepo: false,
+  currentBranch: '', mainBranch: 'main', gitStatus: '', recentCommits: [],
 };
 
 // ── OpenAI → CommandCode body ────────────────────────────────────────────────
+
+function textOf(content) {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) return content.filter(p => p && p.type === 'text').map(p => p.text).join('');
+  return content == null ? '' : String(content);
+}
+
+function parseArgs(args) {
+  if (args && typeof args === 'object') return args;
+  try { return JSON.parse(args || '{}'); } catch { return {}; }
+}
+
+function imagePart(url) {
+  const m = /^data:([^;,]+)[;,]/.exec(url || '');
+  return m ? { type: 'image', image: url, mediaType: m[1] } : { type: 'image', image: url };
+}
 
 function transform(oaiBody) {
   const model = oaiBody.model || 'deepseek/deepseek-v4-pro';
@@ -84,28 +95,38 @@ function transform(oaiBody) {
   }
 
   for (const m of oaiBody.messages || []) {
-    if (m.role === 'system') { systemText += (systemText ? '\n\n' : '') + (typeof m.content === 'string' ? m.content : String(m.content)); continue; }
+    if (m.role === 'system' || m.role === 'developer') {
+      systemText += (systemText ? '\n\n' : '') + textOf(m.content);
+      continue;
+    }
     if (m.role === 'tool') {
-      const c = typeof m.content === 'string' ? { type: 'text', value: m.content } : (m.content || { type: 'text', value: String(m.content) });
-      messages.push({ role: 'tool', content: [{ type: 'tool-result', toolCallId: m.tool_call_id, toolName: toolNameMap[m.tool_call_id] || 'unknown', output: c }] });
+      const part = {
+        type: 'tool-result', toolCallId: m.tool_call_id, toolName: toolNameMap[m.tool_call_id] || 'unknown',
+        output: { type: 'text', value: textOf(m.content) },
+      };
+      // Consecutive tool results merge into one role:"tool" message.
+      const prev = messages[messages.length - 1];
+      if (prev && prev.role === 'tool') prev.content.push(part);
+      else messages.push({ role: 'tool', content: [part] });
       continue;
     }
     if (m.role === 'assistant') {
       const parts = [];
-      if (m.content) {
-        if (typeof m.content === 'string') parts.push({ type: 'text', text: m.content });
-        else if (Array.isArray(m.content)) for (const p of m.content) if (p.type === 'text') parts.push({ type: 'text', text: p.text });
-      }
-      if (m.tool_calls) for (const tc of m.tool_calls) if (tc.type === 'function' && tc.function) parts.push({ type: 'tool-call', toolCallId: tc.id, toolName: tc.function.name, input: tc.function.arguments });
+      const text = textOf(m.content);
+      if (text) parts.push({ type: 'text', text });
+      if (m.tool_calls) for (const tc of m.tool_calls) if (tc.type === 'function' && tc.function)
+        parts.push({ type: 'tool-call', toolCallId: tc.id, toolName: tc.function.name, input: parseArgs(tc.function.arguments) });
       messages.push({ role: 'assistant', content: parts });
       continue;
     }
-    if (typeof m.content === 'string') messages.push({ role: m.role, content: [{ type: 'text', text: m.content }] });
-    else if (Array.isArray(m.content)) {
+    if (Array.isArray(m.content)) {
       const parts = [];
-      for (const p of m.content) { if (p.type === 'text') parts.push({ type: 'text', text: p.text }); else if (p.type === 'image_url') parts.push({ type: 'image', url: p.image_url?.url }); }
+      for (const p of m.content) {
+        if (p.type === 'text') parts.push({ type: 'text', text: p.text });
+        else if (p.type === 'image_url') parts.push(imagePart(p.image_url?.url));
+      }
       messages.push({ role: m.role, content: parts });
-    } else messages.push({ role: m.role, content: [{ type: 'text', text: String(m.content) }] });
+    } else messages.push({ role: m.role, content: [{ type: 'text', text: textOf(m.content) }] });
   }
 
   const tools = (oaiBody.tools || []).map(t => ({
@@ -113,14 +134,84 @@ function transform(oaiBody) {
     input_schema: t.function?.parameters || t.input_schema || { type: 'object', properties: {} },
   }));
 
+  const params = {
+    model, system: systemText || undefined, messages, tools: tools.length > 0 ? tools : undefined,
+    max_tokens: oaiBody.max_completion_tokens || oaiBody.max_tokens || 32000,
+    // The gateway rejects stream:false; always stream upstream and buffer here.
+    stream: true,
+  };
+  if (typeof oaiBody.temperature === 'number') params.temperature = oaiBody.temperature;
+
   return JSON.stringify({
     config: { ...STATIC_CONFIG, date: new Date().toISOString().slice(0, 10) },
-    memory: '', taste: null, skills: null, permissionMode: 'standard',
-    params: { model, system: systemText || undefined, messages, tools: tools.length > 0 ? tools : undefined, max_tokens: oaiBody.max_tokens || 32000, stream: oaiBody.stream !== false },
+    memory: '', taste: null, skills: null, permissionMode: 'standard', params,
+  });
+}
+
+// ── NDJSON → OpenAI helpers ──────────────────────────────────────────────────
+
+function toOpenAIUsage(u) {
+  if (!u) return undefined;
+  const prompt = u.inputTokens ?? u.raw?.prompt_tokens ?? 0;
+  const completion = u.outputTokens ?? u.raw?.completion_tokens ?? 0;
+  return {
+    prompt_tokens: prompt,
+    completion_tokens: completion,
+    total_tokens: u.totalTokens ?? prompt + completion,
+    prompt_tokens_details: { cached_tokens: u.cachedInputTokens ?? u.inputTokenDetails?.cacheReadTokens ?? 0 },
+    completion_tokens_details: { reasoning_tokens: u.reasoningTokens ?? u.outputTokenDetails?.reasoningTokens ?? 0 },
+  };
+}
+
+function toFinishReason(r, hasTools) {
+  if (r === 'length') return 'length';
+  if (r === 'tool-calls' || hasTools) return 'tool_calls';
+  if (r === 'content-filter') return 'content_filter';
+  return 'stop';
+}
+
+// Connect failures surface as AggregateError with an empty message.
+function netError(e) {
+  if (e.message) return e.message;
+  const inner = (e.errors || []).map(x => `${x.code || ''} ${x.address || ''}`.trim()).filter(Boolean);
+  return [e.code || e.name || 'network error', ...inner].join(' ');
+}
+
+function errorText(evt) {
+  return evt.error?.message || evt.message || JSON.stringify(evt.error ?? evt);
+}
+
+// Reads NDJSON lines off the upstream response and hands each parsed event to
+// onEvent. Buffers partial lines across chunks without a size cap.
+function readEvents(proxyRes, onEvent, onEnd) {
+  let buf = '';
+  proxyRes.setEncoding('utf8');
+  proxyRes.on('data', chunk => {
+    buf += chunk;
+    let nl;
+    while ((nl = buf.indexOf('\n')) !== -1) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (!line) continue;
+      if (DEBUG) log(`[debug] ${line}`);
+      let evt; try { evt = JSON.parse(line); } catch { continue; }
+      onEvent(evt);
+    }
+  });
+  proxyRes.on('end', () => {
+    const line = buf.trim();
+    if (line) { try { onEvent(JSON.parse(line)); } catch {} }
+    onEnd();
   });
 }
 
 // ── response handler ─────────────────────────────────────────────────────────
+
+function sendError(res, status, message, type = 'upstream_error') {
+  if (res.headersSent) return;
+  res.writeHead(status, { ...CORS, 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ error: { message, type } }));
+}
 
 function handleUpstreamResponse(proxyRes, res, model, isStream, t0) {
   if (proxyRes.statusCode >= 400) {
@@ -129,177 +220,188 @@ function handleUpstreamResponse(proxyRes, res, model, isStream, t0) {
     return;
   }
 
-  const genId = 'chatcmpl-' + Date.now();
-  const dump = DEBUG
-    ? (fs.mkdirSync(path.join(__dirname, 'dump'), { recursive: true }),
-       fs.createWriteStream(path.join(__dirname, 'dump', `dump-${genId}.txt`)))
-    : null;
-  if (dump) log(`[debug] dumping to dump/dump-${genId}.txt`);
+  const genId = 'chatcmpl-' + crypto.randomUUID();
+  const created = Math.floor(Date.now() / 1000);
+  let text = '', reasoning = '', errorMsg = '', usage, finishRaw;
+  const toolCalls = [];
+  const toolById = new Map();
+
+  const done = (reason) => logDone(`${model} | ${text.length} text / ${reasoning.length} reasoning / ${toolCalls.length} tools | ${reason} | ${Date.now() - t0}ms`);
 
   if (!isStream) {
-    // Non-streaming: collect all events → single JSON
-    let buf = '', fullText = '', fullReasoning = '', errorMsg = '';
-    const toolCalls = []; let toolPart = null;
-
-
-    proxyRes.on('data', chunk => {
-      if (dump) dump.write(chunk);
-      buf += chunk.toString();
-      const lines = buf.split('\n'); buf = lines.pop();
-      for (const line of lines) {
-        const t = line.trim(); if (!t) continue;
-        let evt; try { evt = JSON.parse(t); } catch { continue; }
-        switch (evt.type) {
-          case 'error': errorMsg = evt.error?.message || JSON.stringify(evt.error); break;
-          case 'text-delta': fullText += evt.text || ''; break;
-          case 'reasoning-delta': fullReasoning += evt.text || ''; break;
-          case 'tool-input-start': toolPart = { id: evt.id, type: 'function', function: { name: evt.toolName, arguments: '' } }; toolCalls.push(toolPart); break;
-          case 'tool-input-delta': if (evt.delta && toolPart) toolPart.function.arguments += evt.delta; break;
-          case 'tool-input-end': case 'tool-call': toolPart = null; break;
+    readEvents(proxyRes, evt => {
+      switch (evt.type) {
+        case 'error': errorMsg = errorMsg || errorText(evt); break;
+        case 'text-delta': text += evt.text || ''; break;
+        case 'reasoning-delta': reasoning += evt.text || ''; break;
+        case 'tool-input-start': {
+          const tc = { id: evt.id, type: 'function', function: { name: evt.toolName, arguments: '' } };
+          toolCalls.push(tc); toolById.set(evt.id, tc); break;
         }
+        case 'tool-input-delta': { const tc = toolById.get(evt.id); if (tc && evt.delta) tc.function.arguments += evt.delta; break; }
+        case 'tool-call': {
+          const id = evt.id ?? evt.toolCallId;
+          if (!toolById.has(id)) {
+            const tc = { id, type: 'function', function: { name: evt.toolName, arguments: JSON.stringify(evt.input ?? {}) } };
+            toolCalls.push(tc); toolById.set(id, tc);
+          }
+          break;
+        }
+        case 'finish-step': finishRaw = evt.finishReason; usage = evt.usage || usage; break;
+        case 'finish': finishRaw = evt.finishReason || finishRaw; usage = evt.totalUsage || usage; break;
       }
-    });
-
-    proxyRes.on('end', () => {
-      if (buf.trim()) {
-        try { const evt = JSON.parse(buf.trim()); if (evt.type === 'error') errorMsg = evt.error?.message || JSON.stringify(evt.error); else if (evt.type === 'text-delta') fullText += evt.text || ''; else if (evt.type === 'reasoning-delta') fullReasoning += evt.text || ''; } catch {}
-      }
-      if (errorMsg) {
-      logErr(`[error] ${model} | ${errorMsg}`);
-        res.writeHead(502, { ...CORS, 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: { message: errorMsg, type: 'upstream_error', code: 'context_length_exceeded' } }));
-        return;
-      }
-      const text = fullText || fullReasoning;
-      const msg = { role: 'assistant', content: text || null };
-      if (toolCalls.length > 0) { msg.tool_calls = toolCalls; msg.content = text || null; }
+    }, () => {
+      if (errorMsg) { logErr(`${model} | ${errorMsg}`); sendError(res, 502, errorMsg); return; }
+      const reason = toFinishReason(finishRaw, toolCalls.length > 0);
+      const message = { role: 'assistant', content: text || null };
+      if (reasoning) message.reasoning_content = reasoning;
+      if (toolCalls.length > 0) message.tool_calls = toolCalls;
       res.writeHead(200, { ...CORS, 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
-        id: genId, object: 'chat.completion', created: Math.floor(Date.now() / 1000), model,
-        choices: [{ index: 0, message: msg, finish_reason: toolCalls.length > 0 ? 'tool_calls' : 'stop' }],
-        usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+        id: genId, object: 'chat.completion', created, model,
+        choices: [{ index: 0, message, finish_reason: reason }],
+        usage: toOpenAIUsage(usage) ?? { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
       }));
-      logDone(`${model} | ${text.length} text / ${toolCalls.length} tools | stop | ${t0 ? Date.now() - t0 : 0}ms`);
+      done(reason);
     });
-
   } else {
-    // Streaming: CommandCode NDJSON → OpenAI SSE chunks
-    let buf = '', toolCalls = [], toolIdx = 0, roleSent = false, tChars = 0, rChars = 0, errorMsg = '';
-
-    const writeErr = () => {
-      if (!res.headersSent) res.writeHead(200, { ...CORS, 'Content-Type': 'text/event-stream' });
-      res.end(sse({ error: { message: errorMsg, type: 'upstream_error' } }));
-    };
-
+    let roleSent = false, toolIdx = -1;
+    const base = () => ({ id: genId, object: 'chat.completion.chunk', created, model });
     const write = (chunk) => {
+      if (res.writableEnded) return;
       if (!res.headersSent) res.writeHead(200, { ...CORS, 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' });
       res.write(sse(chunk));
     };
-    const base = () => ({ id: genId, object: 'chat.completion.chunk', created: Math.floor(Date.now() / 1000), model });
-    const ensureRole = () => { if (!roleSent) { roleSent = true; write({ ...base(), choices: [{ index: 0, delta: { role: 'assistant', content: '' }, finish_reason: null }] }); } };
+    const delta = (d) => {
+      if (!roleSent) { roleSent = true; d = { role: 'assistant', ...d }; }
+      write({ ...base(), choices: [{ index: 0, delta: d, finish_reason: null }] });
+    };
 
-    proxyRes.on('data', chunk => {
-      if (dump) dump.write(chunk);
-      buf += chunk.toString();
-      const lines = buf.split('\n'); buf = lines.pop();
-      for (const line of lines) {
-        const t = line.trim(); if (!t) continue;
-        let evt; try { evt = JSON.parse(t); } catch { continue; }
-        switch (evt.type) {
-          case 'error':
-            errorMsg = evt.error?.message || JSON.stringify(evt.error); writeErr();
-            log(`[error] ${model} | ${errorMsg}`);
-            break;
-          case 'text-start': toolCalls = []; toolIdx = 0; roleSent = true; write({ ...base(), choices: [{ index: 0, delta: { role: 'assistant', content: '' }, finish_reason: null }] }); break;
-          case 'text-delta': if (evt.text) { tChars += evt.text.length; write({ ...base(), choices: [{ index: 0, delta: { content: evt.text }, finish_reason: null }] }); } break;
-          case 'reasoning-delta': if (evt.text) { rChars += evt.text.length; ensureRole(); write({ ...base(), choices: [{ index: 0, delta: { content: evt.text }, finish_reason: null }] }); } break;
-          case 'tool-input-start':
-            ensureRole(); toolIdx = toolCalls.length; toolCalls.push({ id: evt.id, name: evt.toolName });
-            write({ ...base(), choices: [{ index: 0, delta: { tool_calls: [{ index: toolIdx, id: evt.id, type: 'function', function: { name: evt.toolName, arguments: '' } }] }, finish_reason: null }] });
-            break;
-          case 'tool-input-delta':
-            if (evt.delta && toolCalls[toolIdx]) write({ ...base(), choices: [{ index: 0, delta: { tool_calls: [{ index: toolIdx, function: { arguments: evt.delta } }] }, finish_reason: null }] });
-            break;
-          // skip: start, start-step, text-end, reasoning-start/end, tool-input-end, tool-call, finish-step, finish, provider-metadata, error
+    readEvents(proxyRes, evt => {
+      if (errorMsg || res.writableEnded) return;
+      switch (evt.type) {
+        case 'error':
+          errorMsg = errorText(evt);
+          logErr(`${model} | ${errorMsg}`);
+          // Before any output, a real HTTP error lets LiteLLM fail over.
+          if (!res.headersSent) sendError(res, 502, errorMsg);
+          else { res.write(sse({ error: { message: errorMsg, type: 'upstream_error' } })); res.end(); }
+          break;
+        case 'text-delta': if (evt.text) { text += evt.text; delta({ content: evt.text }); } break;
+        case 'reasoning-delta': if (evt.text) { reasoning += evt.text; delta({ reasoning_content: evt.text }); } break;
+        case 'tool-input-start':
+          toolIdx = toolCalls.length;
+          toolCalls.push({ id: evt.id, name: evt.toolName });
+          toolById.set(evt.id, toolIdx);
+          delta({ tool_calls: [{ index: toolIdx, id: evt.id, type: 'function', function: { name: evt.toolName, arguments: '' } }] });
+          break;
+        case 'tool-input-delta': {
+          const idx = toolById.get(evt.id) ?? toolIdx;
+          if (evt.delta && idx >= 0) delta({ tool_calls: [{ index: idx, function: { arguments: evt.delta } }] });
+          break;
         }
+        case 'tool-call': {
+          const id = evt.id ?? evt.toolCallId;
+          if (!toolById.has(id)) {
+            const idx = toolCalls.length;
+            toolCalls.push({ id, name: evt.toolName });
+            toolById.set(id, idx);
+            delta({ tool_calls: [{ index: idx, id, type: 'function', function: { name: evt.toolName, arguments: JSON.stringify(evt.input ?? {}) } }] });
+          }
+          break;
+        }
+        case 'finish-step': finishRaw = evt.finishReason; usage = evt.usage || usage; break;
+        case 'finish': finishRaw = evt.finishReason || finishRaw; usage = evt.totalUsage || usage; break;
       }
-    });
-
-    proxyRes.on('end', () => {
-      if (errorMsg) return; // already handled by error event
-      const reason = toolCalls.length > 0 ? 'tool_calls' : 'stop';
-      write({ id: genId, object: 'chat.completion.chunk', created: Math.floor(Date.now() / 1000), model, choices: [{ index: 0, delta: {}, finish_reason: reason }] });
+    }, () => {
+      if (errorMsg || res.writableEnded) return;
+      const reason = toFinishReason(finishRaw, toolCalls.length > 0);
+      if (!roleSent) delta({ content: '' });
+      write({ ...base(), choices: [{ index: 0, delta: {}, finish_reason: reason }] });
+      const u = toOpenAIUsage(usage);
+      if (u) write({ ...base(), choices: [], usage: u });
       res.write('data: [DONE]\n\n'); res.end();
-      const dur = t0 ? Date.now() - t0 : 0;
-      log(`[done] ${model} | ${tChars} text / ${rChars} reasoning / ${toolCalls.length} tools | ${reason} | ${dur}ms`);
+      done(reason);
     });
   }
 
-  proxyRes.on('error', () => { if (dump) dump.end(); if (!res.writableEnded) res.end(); });
+  proxyRes.on('error', e => {
+    logErr(`[upstream stream] ${netError(e)}`);
+    if (!res.headersSent) sendError(res, 502, netError(e));
+    else if (!res.writableEnded) res.end();
+  });
 }
 
 // ── main ─────────────────────────────────────────────────────────────────────
 
 function handleRequest(req, res) {
   if (req.method === 'OPTIONS') { res.writeHead(204, { ...CORS, 'Access-Control-Allow-Methods': 'POST,GET,OPTIONS', 'Access-Control-Max-Age': '86400' }); res.end(); return; }
-  if (req.method === 'GET' && req.url === '/health') { res.writeHead(200, CORS); res.end(JSON.stringify({ status: 'ok' })); return; }
-  if (req.method !== 'POST' || !req.url.startsWith('/v1/chat/completions')) { res.writeHead(404, CORS); res.end(JSON.stringify({ error: 'POST /v1/chat/completions' })); return; }
+  if (req.method === 'GET' && req.url === '/health') {
+    res.writeHead(200, { ...CORS, 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'ok', ccVersion }));
+    return;
+  }
+  if (req.method !== 'POST' || !req.url.startsWith('/v1/chat/completions')) {
+    res.writeHead(404, { ...CORS, 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: { message: 'POST /v1/chat/completions', type: 'not_found' } }));
+    return;
+  }
 
   const auth = req.headers['authorization'] || '';
-  let body = '';
-  req.on('data', c => { body += c; if (body.length > 10 * 1024 * 1024) { req.destroy(); res.writeHead(413, CORS); res.end('{}'); } });
+  const chunks = []; let size = 0;
+  req.on('data', c => {
+    size += c.length;
+    if (size > 10 * 1024 * 1024) { req.destroy(); sendError(res, 413, 'request body over 10MB', 'invalid_request_error'); return; }
+    chunks.push(c);
+  });
   req.on('end', () => {
-    let oai; try { oai = JSON.parse(body); } catch { res.writeHead(400, CORS); res.end(JSON.stringify({ error: 'Invalid JSON' })); return; }
+    if (res.headersSent) return;
+    const body = Buffer.concat(chunks).toString('utf8');
+    let oai; try { oai = JSON.parse(body); } catch { sendError(res, 400, 'Invalid JSON', 'invalid_request_error'); return; }
     const model = oai.model || '-', isStream = oai.stream === true;
-    const ip = req.socket.remoteAddress || '-';
-    const bytes = Buffer.byteLength(body);
     const t0 = Date.now();
-    logReq(`${model} | ${ip} | ${isStream ? 'stream' : 'sync'} | ${bytes} bytes`);
+    logReq(`${model} | ${req.socket.remoteAddress || '-'} | ${isStream ? 'stream' : 'sync'} | ${size} bytes`);
 
     let upstream;
-    try { upstream = transform(oai); } catch (e) { res.writeHead(500, CORS); res.end(JSON.stringify({ error: 'Transform error' })); return; }
+    try { upstream = transform(oai); } catch (e) { sendError(res, 400, `transform error: ${e.message}`, 'invalid_request_error'); return; }
 
     const pr = https.request({
       hostname: HOST, path: PATH, method: 'POST', agent, timeout: 300000,
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(upstream), 'Authorization': auth, 'x-command-code-version': CC_VERSION },
+      headers: {
+        'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(upstream), 'Authorization': auth,
+        'x-command-code-version': ccVersion, 'x-cli-environment': 'production', 'x-session-id': crypto.randomUUID(),
+      },
     }, proxyRes => {
       const ok = proxyRes.statusCode >= 200 && proxyRes.statusCode < 300;
       logUp(`${proxyRes.statusCode} ${ok ? 'OK' : 'ERR'} | ${model} | ${Date.now() - t0}ms`);
       handleUpstreamResponse(proxyRes, res, model, isStream, t0);
     });
-    pr.setTimeout(300000, () => { logErr('[upstream] timeout'); pr.destroy(); if (!res.headersSent) { res.writeHead(504, CORS); res.end('{}'); } });
-    pr.on('error', e => { logErr(`[upstream] ${e.message}`); if (!res.headersSent) { res.writeHead(502, CORS); res.end(JSON.stringify({ error: e.message })); } });
-    pr.write(upstream); pr.end();
+    pr.setTimeout(300000, () => { logErr('[upstream] timeout'); pr.destroy(new Error('upstream timeout')); });
+    pr.on('error', e => {
+      logErr(`[upstream] ${netError(e)}`);
+      if (!res.headersSent) sendError(res, e.message === 'upstream timeout' ? 504 : 502, netError(e));
+      else if (!res.writableEnded) res.end();
+    });
+    res.on('close', () => { if (!res.writableFinished) pr.destroy(); });
+    pr.end(upstream);
   });
 }
 
-// ── start: kill existing process on PORT ──────────────────────────────────────
+module.exports = { transform, toOpenAIUsage, toFinishReason };
 
-try {
-  const netstat = execSync(`netstat -ano | findstr :${PORT} | findstr LISTENING`, { encoding: 'utf8', timeout: 5000 });
-  const match = netstat.trim().match(/(\d+)\s*$/m);
-  if (match) {
-    const pid = match[1];
-    log(`killing existing process on port ${PORT} (PID ${pid})`);
-    execSync(`taskkill /F /PID ${pid}`, { timeout: 5000 });
-  }
-} catch {} // no process = nothing to kill
+if (require.main === module) {
+  log(`proxy-commandcode | listening :${PORT} | upstream ${HOST}${PATH} | CC ${ccVersion}${PINNED_VERSION ? ' (pinned)' : ''} | debug ${DEBUG ? 'on' : 'off'}`);
+  refreshVersion();
+  setInterval(refreshVersion, VERSION_REFRESH_MS).unref();
 
-const server = http.createServer(handleRequest);
-server.timeout = 300000; server.keepAliveTimeout = 120000;
-server.listen(PORT, () => log(`listening on http://localhost:${PORT}`));
-server.on('error', e => { if (e.code === 'EADDRINUSE') { logErr(`Port ${PORT} still in use after kill attempt`); process.exit(1); } throw e; });
-process.on('SIGINT', () => {
-  log('shutting down...');
-  // kill any remaining process on this port (cleanup stale listeners)
-  try {
-    const netstat = execSync(`netstat -ano | findstr :${PORT} | findstr LISTENING`, { encoding: 'utf8', timeout: 3000 });
-    const match = netstat.trim().match(/(\d+)\s*$/m);
-    if (match) {
-      const pid = match[1];
-      log(`killing leftover process on port ${PORT} (PID ${pid})`);
-      execSync(`taskkill /F /PID ${pid}`, { timeout: 3000 });
-    }
-  } catch {}
-  server.close(() => logFile.end(() => process.exit(0)));
-});
+  const server = http.createServer(handleRequest);
+  server.timeout = 300000; server.keepAliveTimeout = 120000;
+  server.listen(PORT, () => log(`listening on http://0.0.0.0:${PORT}`));
+  const shutdown = (sig) => {
+    log(`${sig}: shutting down`);
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 5000).unref();
+  };
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
+}
