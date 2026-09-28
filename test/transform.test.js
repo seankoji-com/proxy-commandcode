@@ -12,6 +12,16 @@ test('builds the strict envelope and always streams upstream', () => {
   assert.deepEqual(body.params.messages, [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }]);
 });
 
+test('sends a default system prompt when none or a blank one is given', () => {
+  for (const messages of [
+    [{ role: 'user', content: 'q' }],
+    [{ role: 'system', content: '  ' }, { role: 'user', content: 'q' }],
+  ]) {
+    const body = JSON.parse(transform({ messages }));
+    assert.equal(body.params.system, 'You are a helpful assistant.');
+  }
+});
+
 test('maps system/developer to params.system', () => {
   const body = JSON.parse(transform({ messages: [
     { role: 'system', content: 'a' }, { role: 'developer', content: [{ type: 'text', text: 'b' }] }, { role: 'user', content: 'q' },

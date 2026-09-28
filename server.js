@@ -19,6 +19,11 @@ const DEFAULT_CC_VERSION = '1.66.0';
 const PINNED_VERSION = process.env.PCMC_VERSION || '';
 const VERSION_REFRESH_MS = 6 * 60 * 60 * 1000;
 const DEBUG = process.env.PCMC_DEBUG === '1';
+// With no system prompt the gateway substitutes the ~7.3K-token `cmd` agent
+// prompt (CLI tools, commit rules, taste file), which costs tokens on every call
+// and makes the model act as a coding agent. A blank system is rejected by some
+// models, so always send a real one.
+const DEFAULT_SYSTEM = (process.env.PCMC_DEFAULT_SYSTEM || '').trim() || 'You are a helpful assistant.';
 
 let ccVersion = PINNED_VERSION || DEFAULT_CC_VERSION;
 
@@ -135,7 +140,7 @@ function transform(oaiBody) {
   }));
 
   const params = {
-    model, system: systemText || undefined, messages, tools: tools.length > 0 ? tools : undefined,
+    model, system: systemText.trim() ? systemText : DEFAULT_SYSTEM, messages, tools: tools.length > 0 ? tools : undefined,
     max_tokens: oaiBody.max_completion_tokens || oaiBody.max_tokens || 32000,
     // The gateway rejects stream:false; always stream upstream and buffer here.
     stream: true,
