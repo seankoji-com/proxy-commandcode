@@ -15,6 +15,7 @@ Forked from [nasrulhadi/proxy-commandcode](https://github.com/nasrulhadi/proxy-c
 | Usage | `finish-step`/`finish` usage mapped to OpenAI `usage` (sync body; extra stream chunk with empty `choices`) |
 | Finish reason | `length` / `tool_calls` / `content_filter` mapped from the upstream reason |
 | Request shape | Tool-call `input` sent as an object; consecutive tool results merged; `developer` role folded into `system`; image parts use `{image, mediaType}`; `temperature` and `max_completion_tokens` passed through; `x-session-id` and `x-cli-environment` headers sent |
+| System prompt | A request with no (or a blank) system message gets a one-line default (`PCMC_DEFAULT_SYSTEM`, default `You are a helpful assistant.`); otherwise the gateway injects the ~7.3K-token `cmd` agent prompt on every call |
 | CLI version | `x-command-code-version` tracks `command-code@latest` on npm (checked at start and every 6 h, default `1.66.0`); set `PCMC_VERSION` to pin |
 | Runtime | Logs to stdout only (no `proxy.log`, no ANSI without a TTY); Windows `netstat`/`taskkill` port handling removed; graceful `SIGTERM`; `Dockerfile` + `npm test` |
 
