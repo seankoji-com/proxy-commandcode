@@ -89,6 +89,12 @@ function imagePart(url) {
 }
 
 function transform(oaiBody) {
+  if (!oaiBody || typeof oaiBody !== 'object' || Array.isArray(oaiBody)) {
+    throw new Error('body must be a JSON object');
+  }
+  if (oaiBody.messages !== undefined && !Array.isArray(oaiBody.messages)) {
+    throw new Error('messages must be an array');
+  }
   const model = oaiBody.model || 'deepseek/deepseek-v4-pro';
   let systemText = '';
   const messages = [];
@@ -186,13 +192,19 @@ function errorText(evt) {
   return evt.error?.message || evt.message || JSON.stringify(evt.error ?? evt);
 }
 
+const MAX_EVENT_BUFFER_BYTES = 10 * 1024 * 1024;
+
 // Reads NDJSON lines off the upstream response and hands each parsed event to
-// onEvent. Buffers partial lines across chunks without a size cap.
+// onEvent. Buffers partial lines across chunks with a size cap.
 function readEvents(proxyRes, onEvent, onEnd) {
   let buf = '';
   proxyRes.setEncoding('utf8');
   proxyRes.on('data', chunk => {
     buf += chunk;
+    if (buf.length > MAX_EVENT_BUFFER_BYTES) {
+      proxyRes.destroy(new Error('upstream NDJSON event line exceeded 10MB limit'));
+      return;
+    }
     let nl;
     while ((nl = buf.indexOf('\n')) !== -1) {
       const line = buf.slice(0, nl).trim();
@@ -333,7 +345,12 @@ function handleUpstreamResponse(proxyRes, res, model, isStream, t0) {
   proxyRes.on('error', e => {
     logErr(`[upstream stream] ${netError(e)}`);
     if (!res.headersSent) sendError(res, 502, netError(e));
-    else if (!res.writableEnded) res.end();
+    else if (!res.writableEnded) {
+      if (isStream) {
+        res.write(`data: ${JSON.stringify({ error: { message: netError(e), type: 'upstream_error' } })}\n\n`);
+      }
+      res.end();
+    }
   });
 }
 
@@ -363,9 +380,17 @@ function handleRequest(req, res) {
     if (res.headersSent) return;
     const body = Buffer.concat(chunks).toString('utf8');
     let oai; try { oai = JSON.parse(body); } catch { sendError(res, 400, 'Invalid JSON', 'invalid_request_error'); return; }
+    if (!oai || typeof oai !== 'object' || Array.isArray(oai)) {
+      sendError(res, 400, 'Request body must be a JSON object', 'invalid_request_error');
+      return;
+    }
+    if (oai.messages !== undefined && !Array.isArray(oai.messages)) {
+      sendError(res, 400, 'messages must be an array', 'invalid_request_error');
+      return;
+    }
     const model = oai.model || '-', isStream = oai.stream === true;
     const t0 = Date.now();
-    logReq(`${model} | ${req.socket.remoteAddress || '-'} | ${isStream ? 'stream' : 'sync'} | ${size} bytes`);
+    logReq(`${model} | ${req.socket?.remoteAddress || '-'} | ${isStream ? 'stream' : 'sync'} | ${size} bytes`);
 
     let upstream;
     try { upstream = transform(oai); } catch (e) { sendError(res, 400, `transform error: ${e.message}`, 'invalid_request_error'); return; }
@@ -392,9 +417,18 @@ function handleRequest(req, res) {
   });
 }
 
-module.exports = { transform, toOpenAIUsage, toFinishReason };
+module.exports = { transform, toOpenAIUsage, toFinishReason, handleRequest };
 
 if (require.main === module) {
+  process.on('uncaughtException', err => {
+    logErr(`uncaughtException: ${err && err.stack ? err.stack : err}`);
+    process.exit(1);
+  });
+  process.on('unhandledRejection', reason => {
+    logErr(`unhandledRejection: ${reason && reason.stack ? reason.stack : reason}`);
+    process.exit(1);
+  });
+
   log(`proxy-commandcode | listening :${PORT} | upstream ${HOST}${PATH} | CC ${ccVersion}${PINNED_VERSION ? ' (pinned)' : ''} | debug ${DEBUG ? 'on' : 'off'}`);
   refreshVersion();
   setInterval(refreshVersion, VERSION_REFRESH_MS).unref();

@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { transform, toOpenAIUsage, toFinishReason } = require('../server.js');
+const { transform, toOpenAIUsage, toFinishReason, handleRequest } = require('../server.js');
+const { EventEmitter } = require('node:events');
 
 test('builds the strict envelope and always streams upstream', () => {
   const body = JSON.parse(transform({ model: 'zai-org/GLM-5.2', stream: false, max_tokens: 100, messages: [{ role: 'user', content: 'hi' }] }));
@@ -68,3 +69,52 @@ test('finish reasons', () => {
   assert.equal(toFinishReason('stop', true), 'tool_calls');
   assert.equal(toFinishReason(undefined, false), 'stop');
 });
+
+test('transform rejects null, arrays, and non-array messages', () => {
+  assert.throws(() => transform(null), /body must be a JSON object/);
+  assert.throws(() => transform([]), /body must be a JSON object/);
+  assert.throws(() => transform({ messages: 'not-an-array' }), /messages must be an array/);
+});
+
+test('handleRequest rejects null body with 400', async () => {
+  const req = new EventEmitter();
+  req.method = 'POST';
+  req.url = '/v1/chat/completions';
+  req.headers = {};
+
+  let status = null;
+  let responseData = '';
+  const res = {
+    writeHead(code, headers) { status = code; },
+    end(data) { responseData = data; },
+  };
+
+  handleRequest(req, res);
+  req.emit('data', Buffer.from('null'));
+  req.emit('end');
+
+  assert.equal(status, 400);
+  assert.match(responseData, /Request body must be a JSON object/);
+});
+
+test('handleRequest rejects non-array messages with 400', async () => {
+  const req = new EventEmitter();
+  req.method = 'POST';
+  req.url = '/v1/chat/completions';
+  req.headers = {};
+
+  let status = null;
+  let responseData = '';
+  const res = {
+    writeHead(code, headers) { status = code; },
+    end(data) { responseData = data; },
+  };
+
+  handleRequest(req, res);
+  req.emit('data', Buffer.from(JSON.stringify({ messages: 'invalid' })));
+  req.emit('end');
+
+  assert.equal(status, 400);
+  assert.match(responseData, /messages must be an array/);
+});
+
