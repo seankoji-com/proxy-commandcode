@@ -46,7 +46,7 @@ Editor → POST /v1/chat/completions (OpenAI format)
 ## Quick start
 
 ```bash
-git clone https://github.com/nasrulhadi/proxy-commandcode.git
+git clone https://github.com/seankoji-com/proxy-commandcode.git
 cd proxy-commandcode
 node server.js
 # → listening on http://localhost:3456
@@ -285,4 +285,4 @@ This project is for educational and research purposes only. It uses CommandCode'
 
 ## License
 
-MIT
+MIT. The upstream author, Nasrul Hadi, declared the MIT licence in the original [nasrulhadi/proxy-commandcode](https://github.com/nasrulhadi/proxy-commandcode) README; that repository ships no LICENSE file, so this fork adds the standard MIT text with both copyright holders in [LICENSE](LICENSE).
